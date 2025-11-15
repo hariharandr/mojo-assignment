@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: mojo-assignment
+    env: docker
+    branch: main
+    dockerfilePath: Dockerfile
+    plan: free
+    autoDeploy: true
+    port: 10000
