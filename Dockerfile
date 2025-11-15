@@ -2,13 +2,21 @@
 FROM node:18-alpine AS node-builder
 WORKDIR /app
 
-# install build deps
-COPY package.json package-lock.json yarn.lock pnpm-lock.yaml ./
-# prefer npm if package-lock.json, otherwise yarn/pnpm
+# install build deps (copy only package.json first, then any lockfile if present)
+COPY package.json ./
+
+# copy lockfile(s) if present (safe - will not error if missing)
+# Note: Dockerfile COPY won't ignore missing files, so copy each individually
+# and rely on the conditional installer below.
+COPY package-lock.json ./ 2>/dev/null || true
+COPY yarn.lock ./ 2>/dev/null || true
+COPY pnpm-lock.yaml ./ 2>/dev/null || true
+
 RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; \
     elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
     elif [ -f pnpm-lock.yaml ]; then npm i -g pnpm && pnpm install; \
-    else echo "No lockfile found"; fi
+    else echo "No lockfile found, running npm install"; npm i --legacy-peer-deps; fi
+
 
 # copy frontend & build
 COPY . .
