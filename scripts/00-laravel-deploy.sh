@@ -9,7 +9,7 @@ if [ -f package.json ]; then
   npm run build || true
 fi
 
-# generate key if missing (prints key so you can set env if you need)
+# generate key if missing
 if [ -z "${APP_KEY}" ]; then
   echo "APP_KEY is missing — printing generated key (do not rely on this for secret management)"
   php artisan key:generate --show || true

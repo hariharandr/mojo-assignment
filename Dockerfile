@@ -1,4 +1,4 @@
-# 1) Node build stage (Vite / Tailwind build)
+# 1) Node build
 FROM node:18-alpine AS node-builder
 WORKDIR /app
 
