@@ -1,0 +1,57 @@
+name: Run migrations on Aiven
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSER_ALLOW_SUPERUSER: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: ${{ secrets.GITHUB_PHP_VERSION || '8.4' }}
+          extensions: mbstring, pdo_mysql, openssl, json, mbstring, tokenizer, xml
+
+      - name: Install system deps (for mysql ssl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates
+
+      - name: Copy .env for production migrate
+        run: |
+          echo "APP_ENV=production" > .env.ci
+          echo "APP_DEBUG=false" >> .env.ci
+          echo "APP_KEY=${{ secrets.APP_KEY }}" >> .env.ci
+          echo "DB_CONNECTION=mysql" >> .env.ci
+          echo "DB_HOST=${{ secrets.AIVEN_DB_HOST }}" >> .env.ci
+          echo "DB_PORT=${{ secrets.AIVEN_DB_PORT }}" >> .env.ci
+          echo "DB_DATABASE=${{ secrets.AIVEN_DB_DATABASE }}" >> .env.ci
+          echo "DB_USERNAME=${{ secrets.AIVEN_DB_USERNAME }}" >> .env.ci
+          echo "DB_PASSWORD='${{ secrets.AIVEN_DB_PASSWORD }}'" >> .env.ci
+          # If you need SSL CA file:
+          if [ -n "${{ secrets.AIVEN_DB_SSL_CA }}" ]; then
+            echo "${{ secrets.AIVEN_DB_SSL_CA }}" > aiven-ca.crt
+            echo "MYSQL_ATTR_SSL_CA=/github/workspace/aiven-ca.crt" >> .env.ci
+          fi
+
+      - name: Install deps
+        run: composer install --no-progress --no-suggest --prefer-dist --no-interaction --no-dev
+
+      - name: Run migrations
+        env:
+          ENV_FILE: .env.ci
+        run: |
+          cp .env.ci .env
+          php artisan key:generate --force --ansi >/dev/null || true
+          # confirm DB connection (optional)
+          php -r "try { \$pdo = new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD')); echo 'OK\n'; } catch (Exception \$e) { echo 'ERR: '.\$e->getMessage().\"\\n\"; exit(1);} "
+          php artisan migrate --force --no-interaction
