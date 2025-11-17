@@ -2,7 +2,9 @@ name: Run migrations on Aiven
 
 on:
   workflow_dispatch: {}
-  a
+  push:
+    branches:
+      - main
 
 jobs:
   migrate:
