@@ -43,22 +43,19 @@ jobs:
           APP_KEY: ${{ secrets.APP_KEY || '' }}
           AIVEN_DB_SSL_CA: ${{ secrets.AIVEN_DB_SSL_CA || '' }}
         run: |
-          cat > .env.ci <<'EOF'
-APP_ENV=production
-APP_DEBUG=false
-DB_CONNECTION=mysql
-DB_HOST=${AIVEN_DB_HOST}
-DB_PORT=${AIVEN_DB_PORT}
-DB_DATABASE=${AIVEN_DB_DATABASE}
-DB_USERNAME=${AIVEN_DB_USERNAME}
-DB_PASSWORD=${AIVEN_DB_PASSWORD}
-EOF
-          if [ -n "${APP_KEY}" ]; then
-            printf "\nAPP_KEY=%s\n" "${APP_KEY}" >> .env.ci
+          echo "DB_CONNECTION=mysql" > .env.ci
+          echo "DB_HOST=$AIVEN_DB_HOST" >> .env.ci
+          echo "DB_PORT=$AIVEN_DB_PORT" >> .env.ci
+          echo "DB_DATABASE=$AIVEN_DB_DATABASE" >> .env.ci
+          echo "DB_USERNAME=$AIVEN_DB_USERNAME" >> .env.ci
+          echo "DB_PASSWORD=$AIVEN_DB_PASSWORD" >> .env.ci
+          
+          if [ -n "$APP_KEY" ]; then
+            echo "APP_KEY=$APP_KEY" >> .env.ci
           fi
 
-          if [ -n "${AIVEN_DB_SSL_CA}" ]; then
-            echo "${AIVEN_DB_SSL_CA}" > aiven-ca.crt
+          if [ -n "$AIVEN_DB_SSL_CA" ]; then
+            echo "$AIVEN_DB_SSL_CA" > aiven-ca.crt
             echo "MYSQL_ATTR_SSL_CA=$(pwd)/aiven-ca.crt" >> .env.ci
           fi
 
