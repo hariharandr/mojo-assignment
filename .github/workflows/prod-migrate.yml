@@ -17,7 +17,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup PHP (shivammathur)
-        # use the published major tag v2
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ secrets.GITHUB_PHP_VERSION || '8.4' }}
@@ -44,7 +43,6 @@ jobs:
           APP_KEY: ${{ secrets.APP_KEY || '' }}
           AIVEN_DB_SSL_CA: ${{ secrets.AIVEN_DB_SSL_CA || '' }}
         run: |
-          # create .env.ci (no extra indentation - important)
           cat > .env.ci <<'EOF'
 APP_ENV=production
 APP_DEBUG=false
@@ -55,12 +53,10 @@ DB_DATABASE=${AIVEN_DB_DATABASE}
 DB_USERNAME=${AIVEN_DB_USERNAME}
 DB_PASSWORD=${AIVEN_DB_PASSWORD}
 EOF
-          # append APP_KEY if provided
           if [ -n "${APP_KEY}" ]; then
             printf "\nAPP_KEY=%s\n" "${APP_KEY}" >> .env.ci
           fi
 
-          # optional SSL CA (Aiven) - write file and point to it
           if [ -n "${AIVEN_DB_SSL_CA}" ]; then
             echo "${AIVEN_DB_SSL_CA}" > aiven-ca.crt
             echo "MYSQL_ATTR_SSL_CA=$(pwd)/aiven-ca.crt" >> .env.ci
