@@ -4,12 +4,9 @@ WORKDIR /app
 
 # copy package.json first for better caching
 COPY package.json package-lock.json ./
-ENV npm_config_optional=false
-RUN npm ci --legacy-peer-deps
 
 # copy the rest of the project (uses .dockerignore)
 COPY . .
-RUN npm run build
 
 # set production env for node build
 ENV NODE_ENV=production
