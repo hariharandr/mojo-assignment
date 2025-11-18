@@ -129,7 +129,10 @@ class InstagramAuthController extends Controller
                 'username' => $profile['username'] ?? 'unknown'
             ]);
 
-            return redirect('/dashboard')->with('success', 'Instagram account connected successfully!');
+            return view('instagram.profile', [
+                'profile' => $profile,
+                'access_token' => $longToken
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Instagram OAuth exception', [
