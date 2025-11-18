@@ -1,23 +1,41 @@
-# 1) Node build - Use Debian instead of Alpine for better compatibility
+# 1) Node build - Use specific Node version with better compatibility
 FROM node:18-bullseye AS node-builder
 WORKDIR /app
 
 # copy package.json first for better caching
 COPY package.json package-lock.json ./
 
-# Set environment to skip optional native dependencies
+# Set environment to FORCE JavaScript-only Rollup
 ENV npm_config_optional=false
 ENV VITE_SKIP_NATIVE_DEPS=true
-ENV NODE_ENV=production
+ENV ROLLUP_NATIVE=false
+ENV NODE_OPTIONS="--no-wasm --no-experimental-wasm-modules"
 
-# Install dependencies without optional deps
+# Install dependencies WITHOUT optional dependencies and IGNORE scripts
 RUN npm ci --legacy-peer-deps --omit=optional --ignore-scripts
 
-# copy the rest of the project (uses .dockerignore)
+# Force install rollup without native binaries
+RUN npm list rollup || npm install rollup@^3.0.0 --no-optional --ignore-scripts
+
+# copy the rest of the project
 COPY . .
 
-# Run build with fallback
-RUN npm run build || (echo "Build failed, retrying..." && npm run build)
+# Patch rollup to use JavaScript version only
+RUN node -e "
+const fs = require('fs');
+const path = require('path');
+const rollupPath = path.join(__dirname, 'node_modules', 'rollup', 'dist', 'native.js');
+if (fs.existsSync(rollupPath)) {
+  let content = fs.readFileSync(rollupPath, 'utf8');
+  // Force rollup to use JavaScript loader instead of native
+  content = content.replace(/requireWithFriendlyError\\([^)]*\\)/, 'require(\"./rollup.js\")');
+  fs.writeFileSync(rollupPath, content);
+  console.log('Patched rollup to use JavaScript version');
+}
+"
+
+# Run build
+RUN npm run build
 
 # 2) Composer install stage
 FROM composer:2 AS composer
@@ -25,7 +43,7 @@ WORKDIR /app
 COPY composer.json composer.lock /app/
 RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist --no-scripts
 
-# 3) Final runtime image (nginx + php-fpm)
+# 3) Final runtime image
 FROM richarvey/nginx-php-fpm:3.1.6 AS runtime
 ENV WEBROOT=/var/www/html/public
 ENV COMPOSER_ALLOW_SUPERUSER=1
@@ -34,10 +52,10 @@ WORKDIR /var/www/html
 # copy app files
 COPY --chown=www-data:www-data . /var/www/html
 
-# copy composer vendor from composer stage
+# copy composer vendor
 COPY --from=composer /app/vendor /var/www/html/vendor
 
-# copy built frontend assets from node-builder
+# copy built frontend assets
 COPY --from=node-builder /app/public/build /var/www/html/public/build
 COPY --from=node-builder /app/public/manifest.json /var/www/html/public/manifest.json 2>/dev/null || true
 
