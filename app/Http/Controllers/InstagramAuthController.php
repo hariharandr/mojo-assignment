@@ -12,11 +12,19 @@ class InstagramAuthController extends Controller
 {
     public function redirect()
     {
-        $client = config('services.instagram.client_id');
-        $redirect = config('services.instagram.redirect');
-        $scope = urlencode('instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_content_publish');
+        $client = config('instagram.client_id');
+        $redirect = config('instagram.redirect');
+        // full platform scopes
+        $scopes = 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights';
+
         $force = 'true';
-        $url = "https://www.instagram.com/oauth/authorize?force_reauth={$force}&client_id={$client}&redirect_uri={$redirect}&response_type=code&scope={$scope}";
+        $url = "https://www.instagram.com/oauth/authorize"
+            . "?force_reauth={$force}"
+            . "&client_id=" . urlencode($client)
+            . "&redirect_uri=" . urlencode($redirect)
+            . "&response_type=code"
+            . "&scope=" . urlencode($scopes);
+
         return redirect()->away($url);
     }
 

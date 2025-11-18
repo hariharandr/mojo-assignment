@@ -10,11 +10,6 @@
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* small helper */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
