@@ -1,19 +1,18 @@
 # 1) Node build
-FROM node:18-alpine AS node-builder
+FROM node:20-alpine AS node-builder
 WORKDIR /app
+
+# copy lockfile & package first for caching
 COPY package.json package-lock.json ./
+
+# Install deps (include dev dependencies so vite is available)
+RUN npm ci --legacy-peer-deps
+
+# copy rest of app
 COPY . .
-ENV NODE_ENV=production
-RUN if [ -f package-lock.json ]; then \
-      npm ci --legacy-peer-deps; \
-    elif [ -f yarn.lock ]; then \
-      yarn install --frozen-lockfile; \
-    elif [ -f pnpm-lock.yaml ]; then \
-      npm i -g pnpm && pnpm install; \
-    else \
-      npm i --legacy-peer-deps; \
-    fi
-RUN if [ -f package.json ]; then npm run build || true; fi
+
+# run frontend build
+RUN npm run build
 
 # 2) Composer install stage
 FROM composer:2 AS composer
@@ -21,36 +20,31 @@ WORKDIR /app
 COPY composer.json composer.lock /app/
 RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist --no-scripts
 
-
 # 3) Final runtime image (nginx + php-fpm)
 FROM richarvey/nginx-php-fpm:3.1.6 AS runtime
 ENV WEBROOT=/var/www/html/public
 ENV COMPOSER_ALLOW_SUPERUSER=1
 WORKDIR /var/www/html
 
-# copy app files (including public build output from node stage)
+# copy app files
 COPY --chown=www-data:www-data . /var/www/html
 
-# copy composer vendor from composer stage
+# copy composer vendor
 COPY --from=composer /app/vendor /var/www/html/vendor
 
-# copy built frontend assets from node-builder (if present)
-# if Vite outputs to public/build (Laravel default), it will be included by the previous copy.
-# Optionally override by explicitly copying from node-builder:
+# copy built frontend assets
 COPY --from=node-builder /app/public /var/www/html/public
 
 # copy nginx config
 COPY conf/nginx/nginx-site.conf /etc/nginx/sites-available/default
 
-# ensure writable directories
 RUN mkdir -p storage bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache \
  && chmod -R 0775 storage bootstrap/cache
 
-EXPOSE 80
+EXPOSE 10000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -qO- --timeout=2 http://localhost/health || exit 1
+  CMD wget -qO- --timeout=2 http://localhost:10000/health || exit 1
 
-# the base image's /start.sh will run php-fpm + nginx
 CMD ["/start.sh"]
