@@ -1,17 +1,9 @@
 # 1) Node build
 FROM node:18-alpine AS node-builder
 WORKDIR /app
-
-# copy package.json first for better caching
-COPY package.json ./
-
-# copy the rest of the project (uses .dockerignore)
+COPY package.json package-lock.json ./
 COPY . .
-
-# set production env for node build
 ENV NODE_ENV=production
-
-# install dependencies depending on lockfile that exists
 RUN if [ -f package-lock.json ]; then \
       npm ci --legacy-peer-deps; \
     elif [ -f yarn.lock ]; then \
@@ -21,10 +13,7 @@ RUN if [ -f package-lock.json ]; then \
     else \
       npm i --legacy-peer-deps; \
     fi
-
-# run the frontend build if script exists
 RUN if [ -f package.json ]; then npm run build || true; fi
-
 
 # 2) Composer install stage
 FROM composer:2 AS composer
@@ -58,10 +47,10 @@ RUN mkdir -p storage bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache \
  && chmod -R 0775 storage bootstrap/cache
 
-EXPOSE 10000
+EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -qO- --timeout=2 http://localhost:10000/health || exit 1
+  CMD wget -qO- --timeout=2 http://localhost/health || exit 1
 
 # the base image's /start.sh will run php-fpm + nginx
 CMD ["/start.sh"]

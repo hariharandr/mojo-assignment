@@ -10,4 +10,8 @@ export default defineConfig({
         }),
         tailwindcss(),
     ],
+    define: {
+        'window.jQuery': 'jquery',
+        'window.$': 'jquery',
+    },
 });

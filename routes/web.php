@@ -11,5 +11,5 @@ Route::get('/health', function () {
     return response('OK', 200)->header('Content-Type', 'text/plain');
 });
 
-Route::get('/auth/instagram/redirect', [InstagramAuthController::class, 'redirectToInstagram'])->name('instagram.redirect');
-Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'handleCallback'])->name('instagram.callback');
+Route::get('/auth/instagram', [InstagramAuthController::class, 'redirect'])->name('instagram.redirect');
+Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'callback'])->name('instagram.callback');

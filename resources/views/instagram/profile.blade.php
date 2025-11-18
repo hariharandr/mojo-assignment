@@ -1,61 +1,68 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Instagram Profile</title>
-  <style>
-    body{font-family:system-ui,Arial,Helvetica,sans-serif;padding:20px;background:#f7f7f7;color:#111}
-    .card{background:white;padding:18px;border-radius:8px;max-width:900px;margin:20px auto;box-shadow:0 6px 20px rgba(0,0,0,0.06)}
-    img.avatar{width:80px;height:80px;border-radius:8px;object-fit:cover}
-    .grid{display:grid;grid-template-columns:1fr 2fr;gap:16px;align-items:center}
-    .media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px}
-    .media img{width:100%;height:140px;object-fit:cover;border-radius:6px}
-    a.btn{display:inline-block;padding:8px 12px;background:#111;color:#fff;border-radius:6px;text-decoration:none}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h2>Instagram Profile</h2>
+@extends('layouts.app')
 
-    @if($profile)
-      <div class="grid">
-        <div>
-          @if(!empty($profile['profile_picture_url']))
-            <img src="{{ $profile['profile_picture_url'] }}" alt="avatar" class="avatar">
-          @endif
+@section('content')
+<div class="max-w-6xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-semibold">Instagram Dashboard</h1>
+        <div class="flex items-center gap-3">
+            @include('components.instagram.login-button')
         </div>
-        <div>
-          <p><strong>Username:</strong> {{ $profile['username'] ?? ($profile['user_id'] ?? 'N/A') }}</p>
-          <p><strong>Account Type:</strong> {{ $profile['account_type'] ?? 'N/A' }}</p>
-          <p><strong>Media Count:</strong> {{ $profile['media_count'] ?? 'N/A' }}</p>
-        </div>
-      </div>
-    @else
-      <p>No profile data available.</p>
-    @endif
+    </header>
 
-    <h3 style="margin-top:18px">Recent media</h3>
-    <div class="media-grid">
-      @forelse($media as $m)
-        <div class="media">
-          @if(!empty($m['media_url']))
-            <a href="{{ $m['permalink'] ?? '#' }}" target="_blank">
-              <img src="{{ $m['media_url'] }}" alt="media">
-            </a>
-          @else
-            <div style="height:140px;background:#eee;border-radius:6px"></div>
-          @endif
-          <p style="font-size:13px">{{ \Illuminate\Support\Str::limit($m['caption'] ?? '', 80) }}</p>
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section class="col-span-1 bg-white rounded-lg p-5 shadow">
+            <div id="profile" class="flex flex-col items-center gap-3">
+                <div class="w-24 h-24 rounded-full bg-gray-100 overflow-hidden" id="profileAvatar">
+                    <img src="" alt="avatar" id="profileImg" class="w-full h-full object-cover hidden"/>
+                </div>
+                <div class="text-center">
+                    <h2 id="profileName" class="font-medium text-lg"></h2>
+                    <p id="profileUsername" class="text-sm text-gray-500"></p>
+                </div>
+                <div class="mt-4 w-full text-sm text-gray-600 grid grid-cols-2 gap-2">
+                    <div class="bg-gray-50 p-3 rounded text-center">
+                        <div id="mediaCount" class="text-lg font-semibold">0</div>
+                        <div class="text-xs text-gray-400">Media</div>
+                    </div>
+                    <div class="bg-gray-50 p-3 rounded text-center">
+                        <div id="accountType" class="text-lg font-semibold">—</div>
+                        <div class="text-xs text-gray-400">Account</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="col-span-2 bg-white rounded-lg p-5 shadow">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium">Feed</h3>
+                <div class="flex items-center gap-2">
+                    <button id="refreshFeed" class="px-3 py-1 border rounded text-sm">Refresh</button>
+                    <select id="limitSelect" class="px-2 py-1 border rounded text-sm">
+                        <option value="12">12</option>
+                        <option value="24" selected>24</option>
+                        <option value="48">48</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="feedGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+        </section>
+    </main>
+</div>
+
+<!-- Comment modal -->
+<div id="commentModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg w-full max-w-lg p-4">
+        <div class="flex items-center justify-between">
+            <h4 class="font-medium">Reply to Post</h4>
+            <button id="closeModal" class="text-gray-500">✕</button>
         </div>
-      @empty
-        <p>No media found.</p>
-      @endforelse
+        <div class="mt-3">
+            <textarea id="commentText" rows="4" class="w-full border rounded p-2" placeholder="Write your reply..."></textarea>
+            <div class="flex items-center justify-end gap-2 mt-3">
+                <button id="sendComment" class="px-4 py-2 bg-[#f53803] text-white rounded">Send</button>
+            </div>
+        </div>
     </div>
-
-    <div style="margin-top:18px">
-      <a href="/" class="btn">Back to Home</a>
-    </div>
-  </div>
-</body>
-</html>
+</div>
+@endsection
