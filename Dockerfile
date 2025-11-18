@@ -1,19 +1,19 @@
-# 1) Node build
-FROM node:20-alpine AS node-builder
+# Dockerfile (node build + composer + runtime)
+# 1) Node build (Debian-based)
+FROM node:20-bullseye AS node-builder
 WORKDIR /app
 
-# copy lockfile & package first for caching
+# Copy package files first for caching
 COPY package.json package-lock.json ./
 
-# Install deps (include dev dependencies so vite is available)
+# Skip optional native deps (avoid @rollup native binary issues) & install
 ENV npm_config_optional=false
+RUN npm ci --legacy-peer-deps --omit=optional
 
-RUN npm ci --legacy-peer-deps
-
-# copy rest of app
+# Copy project files
 COPY . .
 
-# run frontend build
+# Run Vite build -> generates public/build/manifest.json
 RUN npm run build
 
 # 2) Composer install stage
@@ -22,22 +22,22 @@ WORKDIR /app
 COPY composer.json composer.lock /app/
 RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist --no-scripts
 
-# 3) Final runtime image (nginx + php-fpm)
+# 3) Final runtime image
 FROM richarvey/nginx-php-fpm:3.1.6 AS runtime
 ENV WEBROOT=/var/www/html/public
 ENV COMPOSER_ALLOW_SUPERUSER=1
 WORKDIR /var/www/html
 
-# copy app files
+# copy app files (source)
 COPY --chown=www-data:www-data . /var/www/html
 
 # copy composer vendor
 COPY --from=composer /app/vendor /var/www/html/vendor
 
-# copy built frontend assets
+# copy built frontend assets (from node-builder)
 COPY --from=node-builder /app/public /var/www/html/public
 
-# copy nginx config
+# nginx conf
 COPY conf/nginx/nginx-site.conf /etc/nginx/sites-available/default
 
 RUN mkdir -p storage bootstrap/cache \
