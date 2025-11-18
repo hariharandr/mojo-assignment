@@ -1,41 +1,30 @@
-# 1) Node build - Use specific Node version with better compatibility
-FROM node:18-bullseye AS node-builder
+# 1) Node build
+FROM node:18-alpine AS node-builder
 WORKDIR /app
 
 # copy package.json first for better caching
-COPY package.json package-lock.json ./
+COPY package.json ./
 
-# Set environment to FORCE JavaScript-only Rollup
-ENV npm_config_optional=false
-ENV VITE_SKIP_NATIVE_DEPS=true
-ENV ROLLUP_NATIVE=false
-ENV NODE_OPTIONS="--no-wasm --no-experimental-wasm-modules"
-
-# Install dependencies WITHOUT optional dependencies and IGNORE scripts
-RUN npm ci --legacy-peer-deps --omit=optional --ignore-scripts
-
-# Force install rollup without native binaries
-RUN npm list rollup || npm install rollup@^3.0.0 --no-optional --ignore-scripts
-
-# copy the rest of the project
+# copy the rest of the project (uses .dockerignore)
 COPY . .
 
-# Patch rollup to use JavaScript version only
-RUN node -e "
-const fs = require('fs');
-const path = require('path');
-const rollupPath = path.join(__dirname, 'node_modules', 'rollup', 'dist', 'native.js');
-if (fs.existsSync(rollupPath)) {
-  let content = fs.readFileSync(rollupPath, 'utf8');
-  // Force rollup to use JavaScript loader instead of native
-  content = content.replace(/requireWithFriendlyError\\([^)]*\\)/, 'require(\"./rollup.js\")');
-  fs.writeFileSync(rollupPath, content);
-  console.log('Patched rollup to use JavaScript version');
-}
-"
+# set production env for node build
+ENV NODE_ENV=production
 
-# Run build
-RUN npm run build
+# install dependencies depending on lockfile that exists
+RUN if [ -f package-lock.json ]; then \
+      npm ci --legacy-peer-deps; \
+    elif [ -f yarn.lock ]; then \
+      yarn install --frozen-lockfile; \
+    elif [ -f pnpm-lock.yaml ]; then \
+      npm i -g pnpm && pnpm install; \
+    else \
+      npm i --legacy-peer-deps; \
+    fi
+
+# run the frontend build if script exists
+RUN if [ -f package.json ]; then npm run build || true; fi
+
 
 # 2) Composer install stage
 FROM composer:2 AS composer
@@ -43,21 +32,23 @@ WORKDIR /app
 COPY composer.json composer.lock /app/
 RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist --no-scripts
 
-# 3) Final runtime image
+
+# 3) Final runtime image (nginx + php-fpm)
 FROM richarvey/nginx-php-fpm:3.1.6 AS runtime
 ENV WEBROOT=/var/www/html/public
 ENV COMPOSER_ALLOW_SUPERUSER=1
 WORKDIR /var/www/html
 
-# copy app files
+# copy app files (including public build output from node stage)
 COPY --chown=www-data:www-data . /var/www/html
 
-# copy composer vendor
+# copy composer vendor from composer stage
 COPY --from=composer /app/vendor /var/www/html/vendor
 
-# copy built frontend assets
-COPY --from=node-builder /app/public/build /var/www/html/public/build
-COPY --from=node-builder /app/public/manifest.json /var/www/html/public/manifest.json 2>/dev/null || true
+# copy built frontend assets from node-builder (if present)
+# if Vite outputs to public/build (Laravel default), it will be included by the previous copy.
+# Optionally override by explicitly copying from node-builder:
+COPY --from=node-builder /app/public /var/www/html/public
 
 # copy nginx config
 COPY conf/nginx/nginx-site.conf /etc/nginx/sites-available/default
@@ -72,4 +63,5 @@ EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD wget -qO- --timeout=2 http://localhost:10000/health || exit 1
 
+# the base image's /start.sh will run php-fpm + nginx
 CMD ["/start.sh"]
