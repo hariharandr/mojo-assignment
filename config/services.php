@@ -39,5 +39,6 @@ return [
         'client_id' => env('INSTAGRAM_CLIENT_ID'),
         'client_secret' => env('INSTAGRAM_CLIENT_SECRET'),
         'redirect' => env('INSTAGRAM_REDIRECT_URI'),
+        'scopes' => env('INSTAGRAM_SCOPES', 'instagram_business_basic'),
     ],
 ];

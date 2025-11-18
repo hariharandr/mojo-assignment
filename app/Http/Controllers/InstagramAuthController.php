@@ -7,23 +7,29 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class InstagramAuthController extends Controller
 {
     public function redirect()
     {
-        $client = config('instagram.client_id');
-        $redirect = config('instagram.redirect');
-        // full platform scopes
-        $scopes = 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights';
+        $clientId = config('services.instagram.client_id');
+        $redirectUri = config('services.instagram.redirect');
+        $scopes = config('services.instagram.scopes', 'instagram_business_basic');
 
-        $force = 'true';
-        $url = "https://www.instagram.com/oauth/authorize"
-            . "?force_reauth={$force}"
-            . "&client_id=" . urlencode($client)
-            . "&redirect_uri=" . urlencode($redirect)
-            . "&response_type=code"
-            . "&scope=" . urlencode($scopes);
+        // Build the authorization URL
+        $url = "https://www.instagram.com/oauth/authorize" .
+            "?client_id=" . urlencode($clientId) .
+            "&redirect_uri=" . urlencode($redirectUri) .
+            "&response_type=code" .
+            "&scope=" . urlencode($scopes);
+
+        Log::info('Instagram OAuth Redirect', [
+            'client_id' => $clientId,
+            'redirect_uri' => $redirectUri,
+            'scopes' => $scopes,
+            'url' => $url
+        ]);
 
         return redirect()->away($url);
     }
@@ -31,59 +37,107 @@ class InstagramAuthController extends Controller
     public function callback(Request $request)
     {
         $code = $request->query('code');
+        
         if (!$code) {
-            return redirect('/')->with('error', 'No code received');
+            $error = $request->query('error');
+            $errorDescription = $request->query('error_description');
+            
+            Log::error('Instagram OAuth callback error', [
+                'error' => $error,
+                'error_description' => $errorDescription
+            ]);
+            
+            return redirect('/')->with('error', $errorDescription ?? 'Authorization failed');
         }
 
-        // Exchange code for short-lived token
-        $response = Http::asForm()->post('https://api.instagram.com/oauth/access_token', [
-            'client_id' => config('services.instagram.client_id'),
-            'client_secret' => config('services.instagram.client_secret'),
-            'grant_type' => 'authorization_code',
-            'redirect_uri' => config('services.instagram.redirect'),
-            'code' => $code,
-        ]);
+        Log::info('Instagram OAuth callback received', ['code' => substr($code, 0, 10) . '...']);
 
-        if ($response->failed()) {
-            return redirect('/')->with('error', 'Token exchange failed: '.$response->body());
-        }
+        try {
+            // Exchange code for short-lived token
+            $response = Http::asForm()->post('https://api.instagram.com/oauth/access_token', [
+                'client_id' => config('services.instagram.client_id'),
+                'client_secret' => config('services.instagram.client_secret'),
+                'grant_type' => 'authorization_code',
+                'redirect_uri' => config('services.instagram.redirect'),
+                'code' => $code,
+            ]);
 
-        $body = $response->json();
+            if ($response->failed()) {
+                Log::error('Instagram token exchange failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                return redirect('/')->with('error', 'Token exchange failed: ' . $response->body());
+            }
 
-        // short-lived access_token and user_id received
-        $accessToken = $body['access_token'] ?? null;
-        $igUserId = $body['user_id'] ?? null;
+            $body = $response->json();
+            Log::info('Instagram token exchange successful', ['user_id' => $body['user_id'] ?? null]);
 
-        // Exchange for long-lived token (server-side)
-        $exchange = Http::get('https://graph.instagram.com/access_token', [
-            'grant_type' => 'ig_exchange_token',
-            'client_secret' => config('services.instagram.client_secret'),
-            'access_token' => $accessToken,
-        ]);
+            $accessToken = $body['access_token'] ?? null;
+            $igUserId = $body['user_id'] ?? null;
 
-        $long = $exchange->json();
-        $longToken = $long['access_token'] ?? $accessToken;
-        $expiresIn = $long['expires_in'] ?? null;
-        $expiresAt = $expiresIn ? Carbon::now()->addSeconds($expiresIn) : null;
+            if (!$accessToken || !$igUserId) {
+                throw new \Exception('Missing access_token or user_id in response');
+            }
 
-        // Get profile fields
-        $profile = Http::get("https://graph.instagram.com/{$igUserId}", [
-            'fields' => 'id,username,account_type,media_count,profile_picture_url',
-            'access_token' => $longToken,
-        ])->json();
+            // Exchange for long-lived token
+            $exchangeResponse = Http::get('https://graph.instagram.com/access_token', [
+                'grant_type' => 'ig_exchange_token',
+                'client_secret' => config('services.instagram.client_secret'),
+                'access_token' => $accessToken,
+            ]);
 
-        // Save to DB
-        $account = InstagramAccount::updateOrCreate(
-            ['instagram_user_id' => $igUserId],
-            [
-                'username' => $profile['username'] ?? null,
+            if ($exchangeResponse->failed()) {
+                Log::error('Instagram long-lived token exchange failed', [
+                    'status' => $exchangeResponse->status(),
+                    'body' => $exchangeResponse->body()
+                ]);
+                // Continue with short-lived token as fallback
+                $longToken = $accessToken;
+                $expiresAt = Carbon::now()->addHours(1); // Short token expires in 1 hour
+            } else {
+                $longData = $exchangeResponse->json();
+                $longToken = $longData['access_token'] ?? $accessToken;
+                $expiresIn = $longData['expires_in'] ?? 5184000; // 60 days default
+                $expiresAt = Carbon::now()->addSeconds($expiresIn);
+            }
+
+            // Get profile information
+            $profileResponse = Http::get("https://graph.instagram.com/{$igUserId}", [
+                'fields' => 'id,username,account_type,media_count,profile_picture_url',
                 'access_token' => $longToken,
-                'token_expires_at' => $expiresAt,
-                'profile_json' => $profile,
-            ]
-        );
+            ]);
 
-        // Redirect to dashboard
-        return redirect('/dashboard')->with('success', 'Instagram connected.');
+            $profile = $profileResponse->successful() ? $profileResponse->json() : [
+                'id' => $igUserId,
+                'username' => 'unknown',
+            ];
+
+            // Save to database
+            $account = InstagramAccount::updateOrCreate(
+                ['instagram_user_id' => $igUserId],
+                [
+                    'username' => $profile['username'] ?? 'unknown',
+                    'access_token' => $longToken,
+                    'token_expires_at' => $expiresAt,
+                    'profile_json' => $profile,
+                ]
+            );
+
+            Log::info('Instagram account connected successfully', [
+                'user_id' => $igUserId,
+                'username' => $profile['username'] ?? 'unknown'
+            ]);
+
+            return redirect('/dashboard')->with('success', 'Instagram account connected successfully!');
+
+        } catch (\Exception $e) {
+            Log::error('Instagram OAuth exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect('/')->with('error', 'Authentication failed: ' . $e->getMessage());
+        }
     }
 }
