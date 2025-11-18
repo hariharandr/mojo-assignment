@@ -1,17 +1,17 @@
-# 1) Node build
-FROM node:20-alpine AS node-builder
+# 1) Node build (Debian-based Node for reliable native binaries)
+FROM node:20-bullseye AS node-builder
 WORKDIR /app
 
-# copy lockfile & package first for caching
+# copy lockfile & package first for better layer caching
 COPY package.json package-lock.json ./
 
-# Install deps (include dev dependencies so vite is available)
+# Ensure npm installs the exact versions (including devDeps required for build)
 RUN npm ci --legacy-peer-deps
 
-# copy rest of app
+# copy rest of the project
 COPY . .
 
-# run frontend build
+# build assets (Vite -> public/build)
 RUN npm run build
 
 # 2) Composer install stage
@@ -26,7 +26,7 @@ ENV WEBROOT=/var/www/html/public
 ENV COMPOSER_ALLOW_SUPERUSER=1
 WORKDIR /var/www/html
 
-# copy app files
+# copy app files (will include public built assets from node-builder below)
 COPY --chown=www-data:www-data . /var/www/html
 
 # copy composer vendor
